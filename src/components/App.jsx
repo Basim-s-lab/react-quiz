@@ -1,0 +1,148 @@
+import { useReducer, useEffect } from "react";
+import Header from "./Header";
+import MainComponent from "./MainComponent";
+import Loader from "./Loader";
+import Error from "./Error";
+import StartScreen from "./StartScreen";
+import Question from "./Question";
+import NextQuestion from "./NextQuestion";
+import Progress from "./Progress";
+import FinishScreen from "./FinishScreen";
+import Footer from "./Footer";
+import Timer from "./Timer";
+const initialState = {
+  questions: [],
+  status: "loading",
+  error: "",
+  index: 0,
+  answer: null,
+  points: 0,
+  highScore: 0,
+  secondsRemaining: null,
+};
+const SECS_PER_QUESTION = 30;
+function reducer(state, action) {
+  switch (action.type) {
+    case "dataReady":
+      return { ...state, questions: action.payload, status: "ready" };
+    case "dataError":
+      return { ...state, error: action.payload, status: "error" };
+    case "start":
+      return {
+        ...state,
+        status: "active",
+        secondsRemaining: state.questions.length * SECS_PER_QUESTION,
+      };
+    case "newAnswer":
+      const question = state.questions.at(state.index);
+
+      return {
+        ...state,
+        answer: action.payload,
+        points:
+          action.payload === question.correctOption
+            ? state.points + question.points
+            : state.points,
+      };
+    case "next":
+      return { ...state, index: state.index + 1, answer: null };
+    case "finished":
+      return {
+        ...state,
+        status: "finished",
+        highScore:
+          state.points > state.highScore ? state.points : state.highScore,
+      };
+    case "restart":
+      return {
+        ...initialState,
+        questions: state.questions,
+        status: "ready",
+        highScore: state.highScore,
+      };
+    case "tick":
+      return {
+        ...state,
+        secondsRemaining: state.secondsRemaining - 1,
+        status: state.secondsRemaining === 0 ? "finished" : state.status,
+      };
+    default:
+      throw new Error("Unknown action");
+  }
+}
+export default function App() {
+  const [
+    {
+      questions,
+      status,
+      error,
+      index,
+      answer,
+      points,
+      highScore,
+      secondsRemaining,
+    },
+    dispatch,
+  ] = useReducer(reducer, initialState);
+  const numQuestions = questions.length;
+  const maxPossiblePoints = questions.reduce(
+    (prev, cur) => prev + cur.points,
+    0
+  );
+  useEffect(function () {
+    fetch("https://backend-server-ruddy-nine.vercel.app/questions")
+      .then((res) => res.json())
+      .then((data) => dispatch({ type: "dataReady", payload: data.questions }))
+      .catch((err) => dispatch({ type: "dataError", payload: err.message }));
+  }, []);
+  return (
+    <div className="App">
+      <div className="app">
+        <Header />
+        <MainComponent>
+          {status === "loading" && <Loader />}
+          {status === "error" && <Error error={error} />}
+          {status === "ready" && (
+            <StartScreen numQuestions={numQuestions} dispatch={dispatch} />
+          )}
+          {status === "active" && (
+            <>
+              <Progress
+                index={index}
+                numQuestions={numQuestions}
+                points={points}
+                maxPossiblePoints={maxPossiblePoints}
+                answer={answer !== null}
+              />
+              <Question
+                question={questions[index]}
+                dispatch={dispatch}
+                answer={answer}
+              />
+              <Footer>
+                <Timer
+                  dispatch={dispatch}
+                  secondsRemaining={secondsRemaining}
+                />
+                <NextQuestion
+                  dispatch={dispatch}
+                  answer={answer}
+                  index={index}
+                  numQuestions={numQuestions}
+                />
+              </Footer>
+            </>
+          )}
+          {status === "finished" && (
+            <FinishScreen
+              points={points}
+              maxPossiblePoints={maxPossiblePoints}
+              highScore={highScore}
+              dispatch={dispatch}
+            />
+          )}
+        </MainComponent>
+      </div>
+    </div>
+  );
+}
